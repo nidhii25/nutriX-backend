@@ -16,3 +16,5 @@ class NutritionPlanResponse(BaseModel):
     days: Any
     startDate: str
     created_at: str
+class SwapMealRequest(BaseModel):
+    meal_id: str

@@ -6,7 +6,7 @@ import uuid
 
 from app.database.connection import get_db
 from app.models.plans import NutritionPlan
-from app.schemas.plans import GeneratePlanRequest
+from app.schemas.plans import GeneratePlanRequest,SwapMealRequest
 from app.services.ai_service import generate_plan_ai, generate_swap_ai
 
 
@@ -136,31 +136,29 @@ async def update_meal_status(plan_id: str, meal_id: str, status: str, db: AsyncS
 # 5) Swap Meal (AI)
 # ----------------------------------------------------------
 @router.post("/{plan_id}/swap")
-async def swap_meal(plan_id: str, meal: dict, db: AsyncSession = Depends(get_db)):
+async def swap_meal(plan_id: str, body: SwapMealRequest, db: AsyncSession = Depends(get_db)):
+    meal = body.model_dump()
 
-    # validate input
+    # validate
     if "id" not in meal:
         raise HTTPException(400, "Meal must include 'id' field")
 
-    # generate replacement from AI
+    # AI replacement
     new_meal = await generate_swap_ai(meal)
-
-    # enforce frontend structure
     new_meal["id"] = str(uuid.uuid4())
     new_meal["isSwapped"] = True
-    new_meal["status"] = "pending"  # default for a swapped meal
-
+    new_meal["status"] = "pending"
+    
     q = await db.execute(select(NutritionPlan).where(NutritionPlan.id == plan_id))
     plan = q.scalar_one_or_none()
     if not plan:
         raise HTTPException(404, "Plan not found")
 
     replaced = False
-
     for day in plan.days:
         for idx, m in enumerate(day["meals"]): #type: ignore
             if m["id"] == meal["id"]:
-                day["meals"][idx] = new_meal #type: ignore
+                day["meals"][idx] = new_meal#type: ignore
                 replaced = True
 
     if not replaced:
