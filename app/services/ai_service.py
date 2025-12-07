@@ -2,21 +2,49 @@ import os
 import json
 import google.generativeai as genai
 
-# Works even if Pylance shows error
+# Load API key
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-model = genai.GenerativeModel("gemini-2.5-flash")  # or "gemini-1.5", "gemini-1.5-pro", etc.
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 
+# ---------------------------------------------------
+# Utility: Diet Rules
+# ---------------------------------------------------
+DIET_RULES = {
+    "veg": "- No meat, fish, chicken, seafood, or eggs.\n",
+    "pure_veg": "- Strict vegetarian. No eggs, onion, garlic.\n",
+    "nonveg": "- Non-veg allowed, balanced lean proteins.\n",
+    "vegan": "- 100% plant-based. No dairy, eggs, honey.\n",
+    "jain": "- Strict Jain. No root vegetables, onion, garlic.\n"
+}
+
+
+# ---------------------------------------------------
+#  PLAN GENERATION (AI)
+# ---------------------------------------------------
 async def generate_plan_ai(user_profile, formData):
-    prompt = f"""
-    Create a nutrition plan in VALID JSON. 
-    Return ONLY JSON.
+    # Extract dietary preference safely
+    diet_type = user_profile.get("dietary_preferences", {}).get("diet_type", "veg")
+    rules = DIET_RULES.get(diet_type, "")
 
-    Required Format:
+    prompt = f"""
+    Create a nutrition plan in VALID JSON ONLY.
+
+    USER DIETARY PREFERENCE: {diet_type.upper()}
+
+    STRICT RULES:
+    {rules}
+    - Never violate dietary preference.
+    - All meals MUST comply.
+    - If VEG or PURE_VEG → no eggs/meat/fish.
+    - If JAIN → no onion, garlic, root vegetables.
+    - If VEGAN → no dairy, eggs, honey.
+
+    Required JSON format:
     {{
         "name": "string",
-        "goal": "string",
+        "goal": "{formData.get("goal")}",
         "duration": {formData["duration"]},
         "days": [
             {{
@@ -42,32 +70,43 @@ async def generate_plan_ai(user_profile, formData):
     USER PROFILE:
     {json.dumps(user_profile)}
 
-    PLAN SETTINGS:
+    SETTINGS:
     {json.dumps(formData)}
 
-    Return ONLY JSON, no markdown, no explanation.
+    Return ONLY JSON. No explanation.
     """
 
     response = model.generate_content(prompt)
     text = response.text.strip()
 
-    # Extract JSON safely
     start = text.find("{")
     end = text.rfind("}")
 
-    json_text = text[start:end+1]
+    json_text = text[start:end + 1]
     return json.loads(json_text)
 
 
-
+# ---------------------------------------------------
+#  SWAP MEAL (AI)
+# ---------------------------------------------------
 async def generate_swap_ai(meal):
-    prompt = f"""
-    Replace this meal with another one of similar macros.
+    # Extract diet
+    diet_type = meal.get("diet_type", "veg")
+    rules = DIET_RULES.get(diet_type, "")
 
-    Original Meal:
+    prompt = f"""
+    Replace this meal with a new one of similar macros.
+
+    DIETARY PREFERENCE: {diet_type.upper()}
+
+    STRICT RULES:
+    {rules}
+    - The replacement meal MUST follow the diet preference.
+
+    ORIGINAL MEAL:
     {json.dumps(meal)}
 
-    Return only JSON:
+    Return ONLY JSON:
     {{
         "id": "uuid",
         "time": "string",
@@ -88,5 +127,5 @@ async def generate_swap_ai(meal):
     start = text.find("{")
     end = text.rfind("}")
 
-    json_text = text[start:end+1]
+    json_text = text[start:end + 1]
     return json.loads(json_text)
